@@ -62,7 +62,7 @@ class HashDiveAnalyzer {
     return SMART_WHALE_ADDRESSES.some(smartAddr => smartAddr.toLowerCase() === addr);
   }
 
-  async request(endpoint, params = {}) {
+  async request(endpoint, params = {}, retryCount = 0) {
     params.api_key = API_KEY;
     
     const url = new URL(`${HASHDIVE_API}${endpoint}`);
@@ -83,9 +83,14 @@ class HashDiveAnalyzer {
       
       if (!res.ok) {
         if (res.status === 429) {
-          console.log(`   ⚠️ Rate limit, ждём 2 секунды...`);
+          // Максимум 3 попытки при rate limit
+          if (retryCount >= 3) {
+            console.log(`   ❌ Rate limit (превышен лимит попыток)`);
+            return null;
+          }
+          console.log(`   ⚠️ Rate limit, ждём 2 секунды... (попытка ${retryCount + 1}/3)`);
           await new Promise(r => setTimeout(r, 2000));
-          return await this.request(endpoint, params); // Retry
+          return await this.request(endpoint, params, retryCount + 1); // Retry с счётчиком
         }
         return null;
       }
@@ -1369,34 +1374,34 @@ class HashDiveAnalyzer {
 
     try {
       results.analyses.whaleMarket = await this.getWhaleMarket();
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 2000));
       
       results.analyses.positionFlips = await this.getPositionFlips();
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 2000));
       
       results.analyses.accumulation = await this.getAccumulation();
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 2000));
       
       results.analyses.whaleOnShallow = await this.getWhaleOnShallow();
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 2000));
       
       results.analyses.totalVolume = await this.getTotalVolume();
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 2000));
       
       results.analyses.revivedInterest = await this.getRevivedInterest();
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 2000));
       
       results.analyses.counterTrend = await this.getCounterTrend();
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 2000));
       
       results.analyses.whaleConflict = await this.getWhaleConflict();
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 2000));
       
       results.analyses.shortSqueeze = await this.getShortSqueeze();
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 2000));
       
       results.analyses.topValueBets = await this.getTopValueBets();
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 2000));
       
       results.analyses.activeWhalePositions = await this.getActiveWhalePositions();
 
