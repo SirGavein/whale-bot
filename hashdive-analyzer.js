@@ -1,6 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════
 // HashDive Analyzer v6.0 — PRODUCTION READY
 // ═══════════════════════════════════════════════════════════════════
+// Профессиональный анализ whale активности на Polymarket
+// Готов к презентации перед руководством
+// ═══════════════════════════════════════════════════════════════════
 
 require('dotenv').config();
 
@@ -37,6 +40,10 @@ class HashDiveAnalyzer {
     console.log('═══════════════════════════════════════════════════════════\n');
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+  // ═══════════════════════════════════════════════════════════════════
+
   async request(endpoint, params = {}) {
     params.api_key = API_KEY;
     
@@ -60,7 +67,7 @@ class HashDiveAnalyzer {
         if (res.status === 429) {
           console.log(`   ⚠️ Rate limit, ждём 2 секунды...`);
           await new Promise(r => setTimeout(r, 2000));
-          return await this.request(endpoint, params);
+          return await this.request(endpoint, params); // Retry
         }
         return null;
       }
@@ -72,19 +79,25 @@ class HashDiveAnalyzer {
     }
   }
 
+  // Проверка что рынок НЕ истёк (цена не 0 или 100)
   isMarketLiquid(market_info) {
     if (!market_info) return false;
+    
+    // Проверяем resolved
     if (market_info.resolved === true) return false;
     
+    // Проверяем цену (если есть)
     if (market_info.target_price !== undefined) {
       const price = parseFloat(market_info.target_price);
-      if (price <= 0.01 || price >= 0.99) return false;
+      if (price <= 0.01 || price >= 0.99) return false; // Истёк
     }
     
     return true;
   }
 
-  // Функция 1: Рынок-фаворит китов
+  // ═══════════════════════════════════════════════════════════════════
+  // ФУНКЦИЯ 1: РЫНОК-ФАВОРИТ КИТОВ
+  // ═══════════════════════════════════════════════════════════════════
   async getWhaleMarket() {
     console.log('🐋 [1/9] Рынок-фаворит китов...');
     
@@ -94,10 +107,11 @@ class HashDiveAnalyzer {
         limit: 300
       });
 
-      if (!trades || trades.length === 0) return { found: false };
+      if (!trades || trades.length === 0) {
+        return { found: false };
+      }
 
       const marketData = {};
-      const now = Date.now();
       
       trades.forEach(trade => {
         if (!this.isMarketLiquid(trade.market_info)) return;
@@ -129,11 +143,14 @@ class HashDiveAnalyzer {
         marketData[assetId].timestamps.push(timestamp);
       });
 
-      // Фильтр активных рынков (<3ч)
+      // ФИЛЬТР: убираем рынки где последняя сделка >3 часов назад
+      const now = Date.now();
+      const threeHours = 3 * 60 * 60 * 1000;
       const activeMarkets = {};
+
       for (const [assetId, data] of Object.entries(marketData)) {
         const hoursSinceLastTrade = (now - data.latestTimestamp) / (1000 * 60 * 60);
-        if (hoursSinceLastTrade <= 3) {
+        if (hoursSinceLastTrade <= 3) { // Только активные рынки
           activeMarkets[assetId] = data;
         }
       }
@@ -161,9 +178,7 @@ class HashDiveAnalyzer {
       const confidence = buyRatio > 0.8 || buyRatio < 0.2 ? 'ВЫСОКАЯ' : 'СРЕДНЯЯ';
       
       // Средняя точка входа
-      const avgPrice = topMarket.prices.length > 0 
-        ? topMarket.prices.reduce((sum, p) => sum + p, 0) / topMarket.prices.length 
-        : 0.5;
+      const avgPrice = topMarket.prices.reduce((sum, p) => sum + p, 0) / topMarket.prices.length;
       
       // Время активности
       const minTime = Math.min(...topMarket.timestamps);
@@ -201,15 +216,19 @@ class HashDiveAnalyzer {
     }
   }
 
-  // Функция 2: Смены позиций
+  // ═══════════════════════════════════════════════════════════════════
+  // ФУНКЦИЯ 2: СМЕНА ПОЗИЦИЙ ТОП-АДРЕСОВ
+  // Использует /get_trades для истории + сравнивает направление
+  // ═══════════════════════════════════════════════════════════════════
   async getPositionFlips() {
     console.log('🔄 [2/9] Смена позиций топ-адресов...');
     
     try {
       const flips = [];
       
-      for (const address of TOP_WHALE_ADDRESSES.slice(0, 10)) {
-        await new Promise(r => setTimeout(r, 300));
+      // Получаем trades для каждого топ адреса
+      for (const address of TOP_WHALE_ADDRESSES.slice(0, 10)) { // Топ-10
+        await new Promise(r => setTimeout(r, 300)); // Задержка для rate limit
         
         const trades = await this.request('/get_trades', {
           user_address: address,
@@ -218,6 +237,7 @@ class HashDiveAnalyzer {
 
         if (!trades || trades.length === 0) continue;
 
+        // Группируем по рынкам
         const byMarket = {};
         trades.forEach(trade => {
           if (!this.isMarketLiquid(trade.market_info)) return;
@@ -233,6 +253,7 @@ class HashDiveAnalyzer {
           byMarket[assetId].trades.push(trade);
         });
 
+        // Ищем смены
         for (const [assetId, data] of Object.entries(byMarket)) {
           if (data.trades.length < 2) continue;
 
@@ -246,8 +267,9 @@ class HashDiveAnalyzer {
           if (latest.side !== previous.side) {
             const latestAmount = parseFloat(latest.usd_amount || 0);
             const previousAmount = parseFloat(previous.usd_amount || 0);
-            const changeAmount = latestAmount + previousAmount;
+            const changeAmount = latestAmount + previousAmount; // СУММА обеих сделок!
 
+            // ФИЛЬТР: Только если сумма ≥$10K
             if (changeAmount < 10000) continue;
 
             const oldDir = previous.side === 'b' 
@@ -259,7 +281,7 @@ class HashDiveAnalyzer {
               : `продаёт ${data.outcome}`;
 
             flips.push({
-              address: address, // ПОЛНЫЙ АДРЕС
+              address: address.substring(0, 10) + '...',
               question: data.question,
               outcome: data.outcome,
               oldPosition: oldDir,
@@ -283,7 +305,10 @@ class HashDiveAnalyzer {
     }
   }
 
-  // Функция 3: Накопление позиций
+  // ═══════════════════════════════════════════════════════════════════
+  // ФУНКЦИЯ 3: НАКОПЛЕНИЕ ПОЗИЦИЙ
+  // Детектор мелких сделок + новых аккаунтов
+  // ═══════════════════════════════════════════════════════════════════
   async getAccumulation() {
     console.log('📊 [3/9] Накопление позиций...');
     
@@ -293,12 +318,14 @@ class HashDiveAnalyzer {
         limit: 1500
       });
 
-      if (!trades || trades.length === 0) return { found: false };
+      if (!trades || trades.length === 0) {
+        return { found: false };
+      }
 
       const accumulations = {};
       const now = Date.now();
       
-      // Определяем активные рынки (<3ч)
+      // Сначала определяем какие рынки АКТИВНЫ (<3ч с последней сделки)
       const activeMarkets = new Set();
       trades.forEach(trade => {
         const timestamp = new Date(trade.timestamp || 0).getTime();
@@ -310,24 +337,26 @@ class HashDiveAnalyzer {
 
       console.log(`   ✓ Активных рынков: ${activeMarkets.size}`);
       
-      // Анализируем только активные рынки
+      // Теперь берём ВСЮ историю, но ТОЛЬКО для активных рынков
       trades.forEach(trade => {
         if (!this.isMarketLiquid(trade.market_info)) return;
-        if (!activeMarkets.has(trade.asset_id)) return;
         
-        const key = `${trade.user_address}_${trade.asset_id}`;
+        const assetId = trade.asset_id;
+        
+        // КРИТИЧНО: Пропускаем если рынок НЕ активен!
+        if (!activeMarkets.has(assetId)) return;
+        
+        const key = `${trade.user_address}_${assetId}`;
         const usdSize = parseFloat(trade.usd_amount || 0);
         
         if (!accumulations[key]) {
           accumulations[key] = {
-            address: trade.user_address, // ПОЛНЫЙ АДРЕС
+            address: trade.user_address,
             question: trade.market_info?.question || 'Unknown',
             outcome: trade.market_info?.outcome || 'Unknown',
             smallTrades: [],
             largeTrades: [],
-            sides: [],
-            prices: [],
-            timestamps: []
+            sides: []
           };
         }
 
@@ -338,8 +367,6 @@ class HashDiveAnalyzer {
         }
         
         accumulations[key].sides.push(trade.side);
-        accumulations[key].prices.push(parseFloat(trade.market_info?.target_price || 0.5));
-        accumulations[key].timestamps.push(new Date(trade.timestamp || 0).getTime());
       });
 
       const results = [];
@@ -349,6 +376,7 @@ class HashDiveAnalyzer {
         const smallCount = data.smallTrades.length;
         const largeCount = data.largeTrades.length;
         
+        // Критерии: ≥5 мелких в одну сторону
         if (smallCount >= 5 && uniqueSides.length === 1 && largeCount <= 2) {
           const totalVolume = data.smallTrades.reduce((sum, t) => 
             sum + parseFloat(t.usd_amount || 0), 0
@@ -361,32 +389,14 @@ class HashDiveAnalyzer {
           
           const isNewAccount = (smallCount + largeCount) < 10;
 
-          // Средняя точка входа
-          const avgPrice = data.prices.length > 0 
-            ? data.prices.reduce((sum, p) => sum + p, 0) / data.prices.length 
-            : 0.5;
-          
-          // Время активности
-          const now = Date.now();
-          const minTime = Math.min(...data.timestamps);
-          const maxTime = Math.max(...data.timestamps);
-          const minutesAgo = Math.floor((now - maxTime) / (1000 * 60));
-          const hoursAgo = Math.floor((now - minTime) / (1000 * 60 * 60));
-          
-          const timeRange = hoursAgo >= 1 
-            ? `${hoursAgo}ч - ${minutesAgo} мин назад`
-            : `${minutesAgo} мин назад`;
-
           results.push({
-            address: data.address, // ПОЛНЫЙ АДРЕС
+            address: data.address.substring(0, 10) + '...',
             question: data.question,
             outcome: data.outcome,
             direction: direction,
             tradeCount: smallCount,
             totalVolume,
-            pattern: isNewAccount ? '🆕 НОВЫЙ' : '📊 НАКОПЛЕНИЕ',
-            avgPrice: `$${avgPrice.toFixed(2)} (${Math.round(avgPrice * 100)}%)`,
-            timeRange: timeRange
+            pattern: isNewAccount ? '🆕 НОВЫЙ' : '📊 НАКОПЛЕНИЕ'
           });
         }
       }
@@ -406,7 +416,10 @@ class HashDiveAnalyzer {
     }
   }
 
-  // Функция 4: Кит на мелководье
+  // ═══════════════════════════════════════════════════════════════════
+  // ФУНКЦИЯ 4: КИТ НА МЕЛКОВОДЬЕ
+  // Использует /get_latest_whale_trades + фильтр истекших рынков
+  // ═══════════════════════════════════════════════════════════════════
   async getWhaleOnShallow() {
     console.log('⚠️ [4/9] Кит на мелководье...');
     
@@ -416,7 +429,9 @@ class HashDiveAnalyzer {
         limit: 300
       });
 
-      if (!trades || trades.length === 0) return { found: false };
+      if (!trades || trades.length === 0) {
+        return { found: false };
+      }
 
       const marketData = {};
       const now = Date.now();
@@ -426,11 +441,12 @@ class HashDiveAnalyzer {
         
         const timestamp = new Date(trade.timestamp || 0).getTime();
         const hoursSince = (now - timestamp) / (1000 * 60 * 60);
+        
+        // Пропускаем старые сделки >3ч
         if (hoursSince > 3) return;
         
         const assetId = trade.asset_id;
         const usdAmount = parseFloat(trade.usd_amount || 0);
-        const price = parseFloat(trade.market_info?.target_price || 0.5);
         
         if (!marketData[assetId]) {
           marketData[assetId] = {
@@ -439,19 +455,16 @@ class HashDiveAnalyzer {
             totalVolume: 0,
             maxWhale: 0,
             maxWhaleAddress: '',
-            tradeCount: 0,
-            prices: [],
-            timestamps: []
+            tradeCount: 0
           };
         }
         
         marketData[assetId].totalVolume += usdAmount;
-        marketData[assetId].prices.push(price);
-        marketData[assetId].timestamps.push(timestamp);
         
+        // Запоминаем адрес крупнейшего кита
         if (usdAmount > marketData[assetId].maxWhale) {
           marketData[assetId].maxWhale = usdAmount;
-          marketData[assetId].maxWhaleAddress = trade.user_address; // ПОЛНЫЙ АДРЕС
+          marketData[assetId].maxWhaleAddress = trade.user_address;
         }
         
         marketData[assetId].tradeCount++;
@@ -460,36 +473,19 @@ class HashDiveAnalyzer {
       const risks = [];
       
       for (const [assetId, data] of Object.entries(marketData)) {
-        if (data.tradeCount <= 2) continue;
+        if (data.tradeCount <= 2) continue; // Пропуск очень малых рынков
         
         const riskFactor = data.maxWhale / data.totalVolume;
         
-        if (riskFactor > 0.3 && data.tradeCount < 20) {
-          // Средняя точка входа
-          const avgPrice = data.prices.length > 0 
-            ? data.prices.reduce((sum, p) => sum + p, 0) / data.prices.length 
-            : 0.5;
-          
-          // Время активности
-          const minTime = Math.min(...data.timestamps);
-          const maxTime = Math.max(...data.timestamps);
-          const minutesAgo = Math.floor((now - maxTime) / (1000 * 60));
-          const hoursAgo = Math.floor((now - minTime) / (1000 * 60 * 60));
-          
-          const timeRange = hoursAgo >= 1 
-            ? `${hoursAgo}ч - ${minutesAgo} мин назад`
-            : `${minutesAgo} мин назад`;
-
+        if (riskFactor > 0.3 && data.tradeCount < 20) { // Повышен порог до 30%
           risks.push({
             question: data.question,
             outcome: data.outcome,
             maxWhale: data.maxWhale,
-            whaleAddress: data.maxWhaleAddress, // ПОЛНЫЙ АДРЕС
+            whaleAddress: data.maxWhaleAddress, // ПОЛНЫЙ адрес без сокращений
             totalVolume: data.totalVolume,
             riskFactor: Math.round(riskFactor * 100) + '%',
-            tradeCount: data.tradeCount,
-            avgPrice: `$${avgPrice.toFixed(2)} (${Math.round(avgPrice * 100)}%)`,
-            timeRange: timeRange
+            tradeCount: data.tradeCount
           });
         }
       }
@@ -509,17 +505,21 @@ class HashDiveAnalyzer {
     }
   }
 
-  // Функция 5: Общий объём
+  // ═══════════════════════════════════════════════════════════════════
+  // ФУНКЦИЯ 5: ОБЩИЙ ОБЪЁМ ЗА 24Ч
+  // ═══════════════════════════════════════════════════════════════════
   async getTotalVolume() {
     console.log('📊 [5/9] Общий объём...');
     
     try {
       const trades = await this.request('/get_latest_whale_trades', {
         min_usd: 1000,
-        limit: 5000
+        limit: 5000 // Увеличен лимит
       });
 
-      if (!trades || trades.length === 0) return { found: false };
+      if (!trades || trades.length === 0) {
+        return { found: false };
+      }
 
       const now = Date.now();
       const day24h = 24 * 60 * 60 * 1000;
@@ -567,7 +567,14 @@ class HashDiveAnalyzer {
     }
   }
 
-  // Функция 6: Возрождённый интерес
+  // ═══════════════════════════════════════════════════════════════════
+  // ФУНКЦИЯ 6-9: УПРОЩЁННЫЕ ВЕРСИИ
+  // ═══════════════════════════════════════════════════════════════════
+  
+  // ═══════════════════════════════════════════════════════════════════
+  // ФУНКЦИЯ 6: ВОЗРОЖДЁННЫЙ ИНТЕРЕС
+  // Формула: spike_ratio = volume_today / avg_volume_past_week
+  // ═══════════════════════════════════════════════════════════════════
   async getRevivedInterest() {
     console.log('🔄 [6/9] Возрождённый интерес...');
     
@@ -577,13 +584,15 @@ class HashDiveAnalyzer {
         limit: 1000
       });
 
-      if (!trades || trades.length === 0) return { found: false };
+      if (!trades || trades.length === 0) {
+        return { found: false };
+      }
 
       const now = Date.now();
       const day1 = 24 * 60 * 60 * 1000;
       const week7 = 7 * 24 * 60 * 60 * 1000;
 
-      // Активные рынки (<3ч)
+      // Сначала определяем какие рынки АКТИВНЫ (<3ч)
       const activeMarkets = new Set();
       trades.forEach(trade => {
         const timestamp = new Date(trade.timestamp || 0).getTime();
@@ -597,13 +606,15 @@ class HashDiveAnalyzer {
       
       trades.forEach(trade => {
         if (!this.isMarketLiquid(trade.market_info)) return;
-        if (!activeMarkets.has(trade.asset_id)) return;
         
         const assetId = trade.asset_id;
+        
+        // КРИТИЧНО: Только активные рынки!
+        if (!activeMarkets.has(assetId)) return;
+        
         const timestamp = new Date(trade.timestamp || 0).getTime();
         const age = now - timestamp;
         const usdAmount = parseFloat(trade.usd_amount || 0);
-        const price = parseFloat(trade.market_info?.target_price || 0.5);
 
         if (!marketActivity[assetId]) {
           marketActivity[assetId] = {
@@ -612,17 +623,13 @@ class HashDiveAnalyzer {
             todayVolume: 0,
             todayCount: 0,
             pastVolume: 0,
-            pastCount: 0,
-            prices: [],
-            timestamps: []
+            pastCount: 0
           };
         }
 
         if (age <= day1) {
           marketActivity[assetId].todayVolume += usdAmount;
           marketActivity[assetId].todayCount++;
-          marketActivity[assetId].prices.push(price);
-          marketActivity[assetId].timestamps.push(timestamp);
         } else if (age <= week7) {
           marketActivity[assetId].pastVolume += usdAmount;
           marketActivity[assetId].pastCount++;
@@ -638,30 +645,13 @@ class HashDiveAnalyzer {
         const spikeRatio = data.todayVolume / avgPastDaily;
 
         if (spikeRatio > 3 && data.todayCount >= 5) {
-          // Средняя точка входа
-          const avgPrice = data.prices.length > 0 
-            ? data.prices.reduce((sum, p) => sum + p, 0) / data.prices.length 
-            : 0.5;
-          
-          // Время активности
-          const minTime = Math.min(...data.timestamps);
-          const maxTime = Math.max(...data.timestamps);
-          const minutesAgo = Math.floor((now - maxTime) / (1000 * 60));
-          const hoursAgo = Math.floor((now - minTime) / (1000 * 60 * 60));
-          
-          const timeRange = hoursAgo >= 1 
-            ? `${hoursAgo}ч - ${minutesAgo} мин назад`
-            : `${minutesAgo} мин назад`;
-
           spikes.push({
             question: data.question,
             outcome: data.outcome,
             todayVolume: data.todayVolume,
             avgPastDaily,
             spikeRatio: spikeRatio.toFixed(1) + 'x',
-            todayCount: data.todayCount,
-            avgPrice: `$${avgPrice.toFixed(2)} (${Math.round(avgPrice * 100)}%)`,
-            timeRange: timeRange
+            todayCount: data.todayCount
           });
         }
       }
@@ -681,7 +671,10 @@ class HashDiveAnalyzer {
     }
   }
 
-  // Функция 7: Необычная активность
+  // ═══════════════════════════════════════════════════════════════════
+  // ФУНКЦИЯ 7: НЕОБЫЧНАЯ WHALE АКТИВНОСТЬ
+  // Дисбаланс buy/sell >80% в одну сторону
+  // ═══════════════════════════════════════════════════════════════════
   async getCounterTrend() {
     console.log('📰 [7/9] Необычная активность...');
     
@@ -691,7 +684,9 @@ class HashDiveAnalyzer {
         limit: 200
       });
 
-      if (!trades || trades.length === 0) return { found: false };
+      if (!trades || trades.length === 0) {
+        return { found: false };
+      }
 
       const marketSentiment = {};
       const now = Date.now();
@@ -701,6 +696,8 @@ class HashDiveAnalyzer {
         
         const timestamp = new Date(trade.timestamp || 0).getTime();
         const hoursSince = (now - timestamp) / (1000 * 60 * 60);
+        
+        // Пропускаем старые сделки >3ч
         if (hoursSince > 3) return;
         
         const assetId = trade.asset_id;
@@ -733,12 +730,13 @@ class HashDiveAnalyzer {
       });
 
       const trends = [];
-      const seenQuestions = new Set();
+      const seenQuestions = new Set(); // Для отслеживания уникальных матчей
       
       for (const [assetId, data] of Object.entries(marketSentiment)) {
         const total = data.buys + data.sells;
         if (total < 5) continue;
 
+        // Пропускаем дубли по question (берём только первое упоминание матча)
         const questionKey = data.question.toLowerCase().trim();
         if (seenQuestions.has(questionKey)) continue;
         seenQuestions.add(questionKey);
@@ -752,8 +750,8 @@ class HashDiveAnalyzer {
           // Время активности
           const oldestTime = Math.min(...data.timestamps);
           const newestTime = Math.max(...data.timestamps);
-          const hoursAgo = Math.floor((now - oldestTime) / (1000 * 60 * 60));
-          const minutesAgo = Math.floor((now - newestTime) / (1000 * 60));
+          const hoursAgo = (now - oldestTime) / (1000 * 60 * 60);
+          const minutesAgo = (now - newestTime) / (1000 * 60);
           
           const timeRange = hoursAgo >= 1 
             ? `${Math.floor(hoursAgo)}ч назад - ${Math.floor(minutesAgo)} мин назад`
@@ -788,7 +786,10 @@ class HashDiveAnalyzer {
     }
   }
 
-  // Функция 8: Противостояние китов
+  // ═══════════════════════════════════════════════════════════════════
+  // ФУНКЦИЯ 8: ПРОТИВОСТОЯНИЕ КИТОВ
+  // Крупные киты на противоположных сторонах одного рынка
+  // ═══════════════════════════════════════════════════════════════════
   async getWhaleConflict() {
     console.log('⚔️ [8/9] Противостояние китов...');
     
@@ -798,7 +799,9 @@ class HashDiveAnalyzer {
         limit: 150
       });
 
-      if (!trades || trades.length === 0) return { found: false };
+      if (!trades || trades.length === 0) {
+        return { found: false };
+      }
 
       const marketConflicts = {};
       const now = Date.now();
@@ -808,6 +811,8 @@ class HashDiveAnalyzer {
         
         const timestamp = new Date(trade.timestamp || 0).getTime();
         const hoursSince = (now - timestamp) / (1000 * 60 * 60);
+        
+        // Пропускаем старые сделки >3ч
         if (hoursSince > 3) return;
         
         const assetId = trade.asset_id;
@@ -827,12 +832,12 @@ class HashDiveAnalyzer {
 
         if (trade.side === 'b') {
           marketConflicts[assetId].buyers.push({
-            address: trade.user_address, // ПОЛНЫЙ АДРЕС
+            address: trade.user_address,
             amount: usdAmount
           });
         } else {
           marketConflicts[assetId].sellers.push({
-            address: trade.user_address, // ПОЛНЫЙ АДРЕС
+            address: trade.user_address,
             amount: usdAmount
           });
         }
@@ -844,11 +849,12 @@ class HashDiveAnalyzer {
       const conflicts = [];
       
       for (const [assetId, data] of Object.entries(marketConflicts)) {
+        // Снижен порог: хотя бы 1 кит с каждой стороны!
         if (data.buyers.length >= 1 && data.sellers.length >= 1) {
           const buyVolume = data.buyers.reduce((sum, b) => sum + b.amount, 0);
           const sellVolume = data.sellers.reduce((sum, s) => sum + s.amount, 0);
 
-          // ПОЛНЫЕ адреса
+          // Собираем ПОЛНЫЕ адреса китов (без сокращений!)
           const buyerAddresses = data.buyers.map(b => b.address);
           const sellerAddresses = data.sellers.map(s => s.address);
           
@@ -877,8 +883,8 @@ class HashDiveAnalyzer {
             direction: buyVolume > sellVolume 
               ? `Больше покупают ${data.outcome}` 
               : `Больше продают ${data.outcome}`,
-            buyerAddresses: buyerAddresses, // ПОЛНЫЕ АДРЕСА
-            sellerAddresses: sellerAddresses, // ПОЛНЫЕ АДРЕСА
+            buyerAddresses: buyerAddresses,
+            sellerAddresses: sellerAddresses,
             avgPrice: `$${avgPrice.toFixed(2)} (${Math.round(avgPrice * 100)}%)`,
             timeRange: timeRange
           });
@@ -898,7 +904,10 @@ class HashDiveAnalyzer {
     }
   }
 
-  // Функция 9: Короткий сквиз
+  // ═══════════════════════════════════════════════════════════════════
+  // ФУНКЦИЯ 9: КОРОТКИЙ СКВИЗ
+  // Формула: squeeze_risk = sell_ratio * buy_pressure
+  // ═══════════════════════════════════════════════════════════════════
   async getShortSqueeze() {
     console.log('💥 [9/9] Короткий сквиз...');
     
@@ -908,7 +917,9 @@ class HashDiveAnalyzer {
         limit: 300
       });
 
-      if (!trades || trades.length === 0) return { found: false };
+      if (!trades || trades.length === 0) {
+        return { found: false };
+      }
 
       const marketData = {};
       const now = Date.now();
@@ -918,11 +929,12 @@ class HashDiveAnalyzer {
         
         const timestamp = new Date(trade.timestamp || 0).getTime();
         const hoursSince = (now - timestamp) / (1000 * 60 * 60);
+        
+        // Пропускаем старые сделки >3ч
         if (hoursSince > 3) return;
         
         const assetId = trade.asset_id;
         const usdAmount = parseFloat(trade.usd_amount || 0);
-        const price = parseFloat(trade.market_info?.target_price || 0.5);
         
         if (!marketData[assetId]) {
           marketData[assetId] = {
@@ -931,9 +943,7 @@ class HashDiveAnalyzer {
             sells: 0,
             buys: 0,
             sellVolume: 0,
-            buyVolume: 0,
-            prices: [],
-            timestamps: []
+            buyVolume: 0
           };
         }
 
@@ -944,9 +954,6 @@ class HashDiveAnalyzer {
           marketData[assetId].buys++;
           marketData[assetId].buyVolume += usdAmount;
         }
-        
-        marketData[assetId].prices.push(price);
-        marketData[assetId].timestamps.push(timestamp);
       });
 
       const squeezes = [];
@@ -959,23 +966,9 @@ class HashDiveAnalyzer {
         const totalVolume = data.buyVolume + data.sellVolume;
         const buyPressure = data.buyVolume / totalVolume;
 
+        // СНИЖЕНЫ критерии: шорты >50% + покупки >30%
         if (sellRatio > 0.5 && buyPressure > 0.3) {
           const squeezeRisk = sellRatio * buyPressure;
-
-          // Средняя точка входа
-          const avgPrice = data.prices.length > 0 
-            ? data.prices.reduce((sum, p) => sum + p, 0) / data.prices.length 
-            : 0.5;
-          
-          // Время активности
-          const minTime = Math.min(...data.timestamps);
-          const maxTime = Math.max(...data.timestamps);
-          const minutesAgo = Math.floor((now - maxTime) / (1000 * 60));
-          const hoursAgo = Math.floor((now - minTime) / (1000 * 60 * 60));
-          
-          const timeRange = hoursAgo >= 1 
-            ? `${hoursAgo}ч - ${minutesAgo} мин назад`
-            : `${minutesAgo} мин назад`;
 
           squeezes.push({
             question: data.question,
@@ -983,9 +976,7 @@ class HashDiveAnalyzer {
             sellRatio: Math.round(sellRatio * 100) + '%',
             buyPressure: Math.round(buyPressure * 100) + '%',
             squeezeRisk: (squeezeRisk * 100).toFixed(1),
-            direction: `Шорты на ${data.outcome} под давлением`,
-            avgPrice: `$${avgPrice.toFixed(2)} (${Math.round(avgPrice * 100)}%)`,
-            timeRange: timeRange
+            direction: `Шорты на ${data.outcome} под давлением`
           });
         }
       }
@@ -1005,7 +996,11 @@ class HashDiveAnalyzer {
     }
   }
 
-  // Функция 10: Топ-3 выгодных ставок
+  // ═══════════════════════════════════════════════════════════════════
+  // ФУНКЦИЯ 10: ТОП-3 ВЫГОДНЫХ СТАВОК
+  // Формула: value = (whale_buy_ratio - 0.5) * whale_volume
+  // Чем больше китов покупают + чем больше объём = тем выгоднее
+  // ═══════════════════════════════════════════════════════════════════
   async getTopValueBets() {
     console.log('💎 [10/10] Топ-3 выгодных ставок...');
     
@@ -1015,7 +1010,9 @@ class HashDiveAnalyzer {
         limit: 500
       });
 
-      if (!trades || trades.length === 0) return { found: false };
+      if (!trades || trades.length === 0) {
+        return { found: false };
+      }
 
       const now = Date.now();
       const marketData = {};
@@ -1025,6 +1022,8 @@ class HashDiveAnalyzer {
         
         const timestamp = new Date(trade.timestamp || 0).getTime();
         const hoursSince = (now - timestamp) / (1000 * 60 * 60);
+        
+        // Только свежие <3ч
         if (hoursSince > 3) return;
         
         const assetId = trade.asset_id;
@@ -1060,7 +1059,7 @@ class HashDiveAnalyzer {
       
       for (const [assetId, data] of Object.entries(marketData)) {
         const total = data.buys + data.sells;
-        if (total < 5) continue;
+        if (total < 5) continue; // Минимум 5 сделок
 
         const totalVolume = data.buyVolume + data.sellVolume;
         const buyRatio = data.buys / total;
@@ -1137,7 +1136,9 @@ class HashDiveAnalyzer {
     }
   }
 
-  // Главный метод
+  // ═══════════════════════════════════════════════════════════════════
+  // ГЛАВНЫЙ МЕТОД
+  // ═══════════════════════════════════════════════════════════════════
   async runFullAnalysis() {
     console.log('\n═══════════════════════════════════════════════════════════');
     console.log('🔍 ЗАПУСК АНАЛИЗА POLYMARKET');
