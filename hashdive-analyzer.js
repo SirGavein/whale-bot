@@ -29,6 +29,24 @@ const TOP_WHALE_ADDRESSES = [
   '0xcc500cbcc8b7cf5bd21975ebbea34f21b5644c82'
 ];
 
+// СМАРТ-КОШЕЛЬКИ (всегда показывать полностью)
+const SMART_WALLETS = [
+  '0x371a0d623144ad877c81614afe52c356619c34b0',
+  '0xf1f06f49be8ce5681752ae80e660aeaace6858df',
+  '0xfb81f27f1c8758d477332f8e751322c424da1cf3',
+  '0xdf0a8404f0739f7e573c3e89808f66efe8498ca0',
+  '0x51727cf649ff35f254a7975f90800dea4b290581',
+  '0x6a99053587ebfb69846b7e872678005e64ad2cfa',
+  '0x2853240a0f4e9e11a949a5cfa6e0fe953a293482',
+  '0xb1250c4e5425336964af3c61ecbf34ac396d69eb',
+  '0x9524e6caca4da8aa811b57564a0a5a6d9fc286cf',
+  '0x1e109e389fb9cc1fc37360ab796b42c12d4bbeee',
+  '0x99984e22205053950eb25453779267bcc1aee858',
+  '0xdbade4c82fb72780a0db9a38f821d8671aba9c95',
+  '0xb1250c4e5425336964af3c61ecbf34ac396d69eb',
+  '0xd1a8d4efc9eceea5eb6783b4f84194bc8d3fbcf1'
+];
+
 class HashDiveAnalyzer {
   constructor() {
     if (!API_KEY) {
@@ -37,6 +55,7 @@ class HashDiveAnalyzer {
     console.log('═══════════════════════════════════════════════════════════');
     console.log('✅ HashDive Analyzer v6.0 PRODUCTION инициализирован');
     console.log(`📊 Отслеживаем ${TOP_WHALE_ADDRESSES.length} топ whale адресов`);
+    console.log(`📊 Отслеживаем ${SMART_WALLETS.length} смарт-кошельков`);
     console.log('═══════════════════════════════════════════════════════════\n');
   }
 
@@ -281,7 +300,7 @@ class HashDiveAnalyzer {
               : `продаёт ${data.outcome}`;
 
             flips.push({
-              address: address.substring(0, 10) + '...',
+              address: address, // ПОЛНЫЙ адрес
               question: data.question,
               outcome: data.outcome,
               oldPosition: oldDir,
@@ -390,7 +409,7 @@ class HashDiveAnalyzer {
           const isNewAccount = (smallCount + largeCount) < 10;
 
           results.push({
-            address: data.address.substring(0, 10) + '...',
+            address: data.address, // ПОЛНЫЙ адрес
             question: data.question,
             outcome: data.outcome,
             direction: direction,
@@ -482,7 +501,7 @@ class HashDiveAnalyzer {
             question: data.question,
             outcome: data.outcome,
             maxWhale: data.maxWhale,
-            whaleAddress: data.maxWhaleAddress, // ПОЛНЫЙ адрес без сокращений
+            whaleAddress: data.maxWhaleAddress, // ПОЛНЫЙ адрес
             totalVolume: data.totalVolume,
             riskFactor: Math.round(riskFactor * 100) + '%',
             tradeCount: data.tradeCount
@@ -854,7 +873,7 @@ class HashDiveAnalyzer {
           const buyVolume = data.buyers.reduce((sum, b) => sum + b.amount, 0);
           const sellVolume = data.sellers.reduce((sum, s) => sum + s.amount, 0);
 
-          // Собираем ПОЛНЫЕ адреса китов (без сокращений!)
+          // Собираем ПОЛНЫЕ адреса китов
           const buyerAddresses = data.buyers.map(b => b.address);
           const sellerAddresses = data.sellers.map(s => s.address);
           
@@ -883,8 +902,8 @@ class HashDiveAnalyzer {
             direction: buyVolume > sellVolume 
               ? `Больше покупают ${data.outcome}` 
               : `Больше продают ${data.outcome}`,
-            buyerAddresses: buyerAddresses,
-            sellerAddresses: sellerAddresses,
+            buyerAddresses: buyerAddresses, // ПОЛНЫЕ адреса
+            sellerAddresses: sellerAddresses, // ПОЛНЫЕ адреса
             avgPrice: `$${avgPrice.toFixed(2)} (${Math.round(avgPrice * 100)}%)`,
             timeRange: timeRange
           });

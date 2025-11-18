@@ -521,7 +521,6 @@ function escapeMarkdown(text) {
 }
 
 // ==================== /whales - АНАЛИЗ КИТОВ ====================
-// ИСПРАВЛЕННАЯ ВЕРСИЯ под новую структуру hashdive-analyzer.js
 
 bot.onText(/\/whales/, async (msg) => {
   const chatId = msg.chat.id;
@@ -555,7 +554,8 @@ bot.onText(/\/whales/, async (msg) => {
       const pf = results.analyses.positionFlips;
       message += `*🔄 СМЕНЫ ПОЗИЦИЙ \\(${pf.count}\\):*\n`;
       pf.flips.slice(0, 3).forEach((flip, i) => {
-        message += `${i + 1}\\. ${escapeMarkdown(flip.oldPosition)} → ${escapeMarkdown(flip.newPosition)}\n`;
+        message += `${i + 1}\\. Адрес: \`${flip.address}\`\n`;
+        message += `   ${escapeMarkdown(flip.oldPosition)} → ${escapeMarkdown(flip.newPosition)}\n`;
         message += `   ${escapeMarkdown(flip.question.substring(0, 40))}\\.\\.\\.\n`;
         message += `   💵 $${formatLargeNumber(flip.changeAmount)}\n`;
       });
@@ -567,7 +567,8 @@ bot.onText(/\/whales/, async (msg) => {
       const acc = results.analyses.accumulation;
       message += `*📊 НАКОПЛЕНИЕ \\(${acc.count}\\):*\n`;
       acc.accumulations.slice(0, 5).forEach((a, i) => {
-        message += `${i + 1}\\. ${a.pattern} ${escapeMarkdown(a.direction)}\n`;
+        message += `${i + 1}\\. Адрес: \`${a.address}\`\n`;
+        message += `   ${a.pattern} ${escapeMarkdown(a.direction)}\n`;
         message += `   ${escapeMarkdown(a.question.substring(0, 40))}\\.\\.\\.\n`;
         message += `   💰 $${formatLargeNumber(a.totalVolume)} \\(${a.tradeCount} сделок\\)\n`;
       });
@@ -734,9 +735,10 @@ bot.onText(/\/whales_full/, async (msg) => {
       const acc = results.analyses.accumulation;
       msg1 += `📊 НАКОПЛЕНИЕ (${acc.count}):\n`;
       acc.accumulations.slice(0, 5).forEach((a, i) => {
-        msg1 += `${i + 1}. ${a.side}\n`;
+        msg1 += `${i + 1}. Адрес: ${a.address}\n`;
+        msg1 += `   ${a.side}\n`;
         msg1 += `   ${a.question.substring(0, 40)}...\n`;
-        msg1 += `   $${formatLargeNumber(a.totalUsd)} (${a.tradeCount}x)\n`;
+        msg1 += `   $${formatLargeNumber(a.totalVolume)} (${a.tradeCount}x)\n`;
       });
       msg1 += '\n';
     }
@@ -745,8 +747,9 @@ bot.onText(/\/whales_full/, async (msg) => {
       const pf = results.analyses.positionFlips;
       msg1 += `🔄 СМЕНЫ ПОЗИЦИЙ (${pf.count}):\n`;
       pf.flips.slice(0, 5).forEach((flip, i) => {
-        msg1 += `${i + 1}. ${flip.question.substring(0, 40)}...\n`;
-        msg1 += `   Стороны: ${flip.sides.join(' & ')}\n`;
+        msg1 += `${i + 1}. Адрес: ${flip.address}\n`;
+        msg1 += `   ${flip.question.substring(0, 40)}...\n`;
+        msg1 += `   Стороны: ${flip.oldPosition} & ${flip.newPosition}\n`;
       });
     }
     
@@ -759,9 +762,9 @@ bot.onText(/\/whales_full/, async (msg) => {
     if (results.analyses.revivedInterest?.found) {
       const ri = results.analyses.revivedInterest;
       msg2 += `🔄 ВОЗРОЖДЕНИЕ (${ri.count}):\n`;
-      ri.revived.slice(0, 3).forEach((m, i) => {
+      ri.spikes.slice(0, 3).forEach((m, i) => {
         msg2 += `${i + 1}. ${m.question.substring(0, 40)}...\n`;
-        msg2 += `   📈 Сделок: ${m.recentTrades} | $${formatLargeNumber(m.recentVolume)}\n`;
+        msg2 += `   📈 Сделок: ${m.todayCount} | $${formatLargeNumber(m.todayVolume)}\n`;
       });
       msg2 += '\n';
     }
@@ -773,6 +776,12 @@ bot.onText(/\/whales_full/, async (msg) => {
         msg2 += `${i + 1}. ${c.question.substring(0, 40)}...\n`;
         msg2 += `   Покупателей: ${c.buyersCount} vs Продавцов: ${c.sellersCount}\n`;
         msg2 += `   💵 Buy: $${formatLargeNumber(c.buyVolume)} | Sell: $${formatLargeNumber(c.sellVolume)}\n`;
+        if (c.buyerAddresses && c.buyerAddresses.length > 0) {
+          msg2 += `   Покупатели: ${c.buyerAddresses.slice(0, 2).join(', ')}\n`;
+        }
+        if (c.sellerAddresses && c.sellerAddresses.length > 0) {
+          msg2 += `   Продавцы: ${c.sellerAddresses.slice(0, 2).join(', ')}\n`;
+        }
       });
       msg2 += '\n';
     }
@@ -810,6 +819,7 @@ bot.onText(/\/whales_full/, async (msg) => {
       ws.risks.slice(0, 3).forEach((r, i) => {
         msg3 += `${i + 1}. ${r.question.substring(0, 40)}...\n`;
         msg3 += `   🐋 $${formatLargeNumber(r.maxWhale)} | Риск: ${r.riskFactor}\n`;
+        msg3 += `   Адрес: ${r.whaleAddress}\n`;
       });
       msg3 += '\n';
     }
