@@ -545,6 +545,8 @@ bot.onText(/\/whales/, async (msg) => {
       message += `🐋 Китов: ${wm.whaleCount}\n`;
       message += `📊 Ср\\. сделка: $${formatLargeNumber(wm.avgTradeSize)}\n`;
       message += `🎯 Направление: ${escapeMarkdown(wm.direction)} \\(${wm.directionPercent}\\)\n`;
+      message += `📈 Ср\\. точка входа: ${escapeMarkdown(wm.avgPrice)}\n`;
+      message += `⏰ Активность: ${escapeMarkdown(wm.timeRange)}\n`;
       message += `✓ Уверенность: ${wm.confidence}\n\n`;
     }
 
@@ -579,7 +581,7 @@ bot.onText(/\/whales/, async (msg) => {
       ws.risks.slice(0, 3).forEach((r, i) => {
         message += `${i + 1}\\. ${escapeMarkdown(r.question.substring(0, 40))}\\.\\.\\.\n`;
         message += `   🐋 $${formatLargeNumber(r.maxWhale)} vs $${formatLargeNumber(r.totalVolume)}\n`;
-        message += `   👤 Кошелёк: \`${r.whaleAddress.substring(0, 10)}\\.\\.\\.\`\n`;
+        message += `   👤 Кошелёк: \`${r.whaleAddress}\`\n`;
         message += `   ⚠️ Риск: ${escapeMarkdown(r.riskFactor)} \\(${r.tradeCount} сделок\\)\n`;
       });
       message += '\n';
@@ -623,6 +625,8 @@ bot.onText(/\/whales/, async (msg) => {
         message += `${i + 1}\\. ${escapeMarkdown(t.direction)}\n`;
         message += `   ${escapeMarkdown(t.question.substring(0, 40))}\\.\\.\\.\n`;
         message += `   📊 Соотношение: ${escapeMarkdown(t.buyRatio)}\n`;
+        message += `   📈 Ср\\. точка входа: ${escapeMarkdown(t.avgPrice)}\n`;
+        message += `   ⏰ ${escapeMarkdown(t.timeRange)}\n`;
       });
       message += '\n';
       hasMore = true;
@@ -636,6 +640,8 @@ bot.onText(/\/whales/, async (msg) => {
         message += `${i + 1}\\. ${escapeMarkdown(c.direction)}\n`;
         message += `   ${escapeMarkdown(c.question.substring(0, 40))}\\.\\.\\.\n`;
         message += `   👥 Покупателей: ${c.buyersCount} | Продавцов: ${c.sellersCount}\n`;
+        message += `   📈 Ср\\. точка входа: ${escapeMarkdown(c.avgPrice)}\n`;
+        message += `   ⏰ ${escapeMarkdown(c.timeRange)}\n`;
         
         // Показываем адреса покупателей
         if (c.buyerAddresses && c.buyerAddresses.length > 0) {
@@ -674,6 +680,8 @@ bot.onText(/\/whales/, async (msg) => {
         message += `${i + 1}\\. ${escapeMarkdown(bet.direction)}\n`;
         message += `   ${escapeMarkdown(bet.question.substring(0, 40))}\\.\\.\\.\n`;
         message += `   📊 Объём: $${formatLargeNumber(bet.totalVolume)} \\(${escapeMarkdown(bet.buyRatio)} китов\\)\n`;
+        message += `   📈 Ср\\. точка входа: ${escapeMarkdown(bet.avgPrice)}\n`;
+        message += `   ⏰ ${escapeMarkdown(bet.timeRange)}\n`;
         message += `   ⚡ Сигнал: ${bet.signal}\n`;
       });
       message += '\n📋 *Рекомендация:* Диверсификация 40% спорт, 30% крипто, 30% другое\\.\n';
