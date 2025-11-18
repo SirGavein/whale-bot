@@ -831,3 +831,15 @@ console.log('  /news - Свежие новости');
 console.log('  /politics - Политика');
 console.log('  /crypto - Криптовалюты');
 console.log('  /tech - Технологии\n');
+// HTTP сервер для Render.com
+const http = require('http');
+const PORT = process.env.PORT || 3000;
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200, {'Content-Type': 'text/plain'});
+  res.end('🐋 Whale Bot is running!\n');
+});
+
+server.listen(PORT, () => {
+  console.log(`✅ HTTP server running on port ${PORT}`);
+});
