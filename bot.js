@@ -5,6 +5,7 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const Parser = require('rss-parser');
+const express = require('express'); // Добавляем Express
 
 // Наши модули
 const PolymarketSDK = require('./polymarket-sdk');
@@ -15,11 +16,36 @@ const { ALL_RSS_FEEDS, getRelevantRSS } = require('./rss-sources');
 // ==================== КОНФИГУРАЦИЯ ====================
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const PORT = process.env.PORT || 3000; // Порт для Render
 
 if (!TELEGRAM_TOKEN) {
   console.error('❌ Добавь TELEGRAM_TOKEN в .env файл');
   process.exit(1);
 }
+
+// ==================== EXPRESS СЕРВЕР ДЛЯ RENDER ====================
+
+const app = express();
+
+// Healthcheck endpoint для Render
+app.get('/', (req, res) => {
+  res.status(200).send('🐋 Whale Bot is running!');
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Запуск сервера
+app.listen(PORT, () => {
+  console.log(`✅ HTTP Server running on port ${PORT}`);
+});
+
+// ==================== TELEGRAM BOT ====================
 
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const parser = new Parser({
@@ -625,8 +651,18 @@ bot.onText(/\/whales/, async (msg) => {
         message += `${i + 1}\\. ${escapeMarkdown(t.direction)}\n`;
         message += `   ${escapeMarkdown(t.question.substring(0, 40))}\\.\\.\\.\n`;
         message += `   📊 Соотношение: ${escapeMarkdown(t.buyRatio)}\n`;
-        message += `   📈 Ср\\. точка входа: ${escapeMarkdown(t.avgPrice)}\n`;
+        message += `   📈 Ср\\. точка входа: ${escapeMarkdown(t.avgEntryPoint || 'N/A')}\n`;
         message += `   ⏰ ${escapeMarkdown(t.timeRange)}\n`;
+        
+        // Показываем кошельки
+        if (t.buyerAddresses && t.buyerAddresses.length > 0) {
+          const buyers = t.buyerAddresses.slice(0, 2).join(', ');
+          message += `   🟢 Покупают: \`${buyers}\`\n`;
+        }
+        if (t.sellerAddresses && t.sellerAddresses.length > 0) {
+          const sellers = t.sellerAddresses.slice(0, 2).join(', ');
+          message += `   🔴 Продают: \`${sellers}\`\n`;
+        }
       });
       message += '\n';
       hasMore = true;
@@ -686,6 +722,29 @@ bot.onText(/\/whales/, async (msg) => {
       });
       message += '\n📋 *Рекомендация:* Диверсификация 40% спорт, 30% крипто, 30% другое\\.\n';
       message += '⚠️ Мониторь травмы и новости\\!\n\n';
+      hasMore = true;
+    }
+
+    // 11. Активные позиции китов
+    if (results.analyses.activeWhalePositions?.found) {
+      const awp = results.analyses.activeWhalePositions;
+      message += `*🎯 АКТИВНЫЕ ПОЗИЦИИ КИТОВ \\(${awp.count}\\):*\n`;
+      awp.positions.slice(0, 3).forEach((pos, i) => {
+        message += `${i + 1}\\. ${escapeMarkdown(pos.question.substring(0, 35))}\\.\\.\\.\n`;
+        message += `   🐋 Китов активно: ${pos.whaleCount} \\| Объём: $${formatLargeNumber(pos.totalVolume)}\n`;
+        message += `   💰 Текущая цена: ${(pos.currentPrice * 100).toFixed(1)}%\n\n`;
+        
+        // Показываем топ-3 китов
+        pos.whales.slice(0, 3).forEach((whale, wi) => {
+          const pnlEmoji = whale.pnlPercent > 0 ? '📈' : '📉';
+          const pnlSign = whale.pnlPercent > 0 ? '+' : '';
+          message += `   ${wi + 1}\\) \`${whale.address}\`\n`;
+          message += `      💼 ${escapeMarkdown(whale.side)} \\| Вход: ${(whale.avgEntryPrice * 100).toFixed(1)}%\n`;
+          message += `      💵 Инвестировано: $${formatLargeNumber(whale.totalInvested)}\n`;
+          message += `      ${pnlEmoji} PNL: ${pnlSign}${whale.pnlPercent.toFixed(1)}% \\(${pnlSign}$${formatLargeNumber(Math.abs(whale.pnl))}\\)\n`;
+        });
+        message += '\n';
+      });
       hasMore = true;
     }
 

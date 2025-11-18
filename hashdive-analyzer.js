@@ -713,16 +713,20 @@ class HashDiveAnalyzer {
             buyVolume: 0,
             sellVolume: 0,
             prices: [],
-            timestamps: []
+            timestamps: [],
+            buyers: [], // Адреса покупателей
+            sellers: [] // Адреса продавцов
           };
         }
 
         if (trade.side === 'b') {
           marketSentiment[assetId].buys++;
           marketSentiment[assetId].buyVolume += usdAmount;
+          marketSentiment[assetId].buyers.push(trade.user_address);
         } else {
           marketSentiment[assetId].sells++;
           marketSentiment[assetId].sellVolume += usdAmount;
+          marketSentiment[assetId].sellers.push(trade.user_address);
         }
         
         marketSentiment[assetId].prices.push(price);
@@ -760,6 +764,10 @@ class HashDiveAnalyzer {
           const direction = buyRatio > 0.8 
             ? `МАССОВО ПОКУПАЮТ ${data.outcome}` 
             : `МАССОВО ПРОДАЮТ ${data.outcome}`;
+          
+          // Уникальные адреса
+          const uniqueBuyers = [...new Set(data.buyers)];
+          const uniqueSellers = [...new Set(data.sellers)];
 
           trends.push({
             question: data.question,
@@ -768,7 +776,9 @@ class HashDiveAnalyzer {
             buyRatio: Math.round(buyRatio * 100) + '%',
             totalVolume: data.buyVolume + data.sellVolume,
             avgEntryPoint: `$${avgPrice.toFixed(2)} (${Math.round(avgPrice * 100)}%)`,
-            timeRange: timeRange
+            timeRange: timeRange,
+            buyerAddresses: uniqueBuyers,
+            sellerAddresses: uniqueSellers
           });
         }
       }
@@ -1137,6 +1147,147 @@ class HashDiveAnalyzer {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // ФУНКЦИЯ 11: АКТИВНЫЕ ПОЗИЦИИ КИТОВ
+  // Отслеживаем рынки где 2+ кита из списка активны
+  // Показываем их точки входа и текущий PNL
+  // ═══════════════════════════════════════════════════════════════════
+  async getActiveWhalePositions() {
+    console.log('🎯 [11/11] Активные позиции китов...');
+    
+    try {
+      const trades = await this.request('/get_latest_whale_trades', {
+        min_usd: 10000,
+        limit: 500
+      });
+
+      if (!trades || trades.length === 0) {
+        return { found: false };
+      }
+
+      const now = Date.now();
+      const marketPositions = {};
+      
+      trades.forEach(trade => {
+        if (!this.isMarketLiquid(trade.market_info)) return;
+        
+        const timestamp = new Date(trade.timestamp || 0).getTime();
+        const hoursSince = (now - timestamp) / (1000 * 60 * 60);
+        
+        // Только свежие <6ч
+        if (hoursSince > 6) return;
+        
+        const assetId = trade.asset_id;
+        const address = trade.user_address;
+        const usdAmount = parseFloat(trade.usd_amount || 0);
+        const entryPrice = parseFloat(trade.market_info?.target_price || 0.5);
+        const side = trade.side; // 'b' = buy, 's' = sell
+        
+        if (!marketPositions[assetId]) {
+          marketPositions[assetId] = {
+            question: trade.market_info?.question || 'Unknown',
+            outcome: trade.market_info?.outcome || 'Unknown',
+            currentPrice: entryPrice, // Обновляется с каждой сделкой
+            whales: {}
+          };
+        }
+        
+        // Обновляем текущую цену (берём последнюю)
+        if (timestamp > (marketPositions[assetId].latestTimestamp || 0)) {
+          marketPositions[assetId].currentPrice = entryPrice;
+          marketPositions[assetId].latestTimestamp = timestamp;
+        }
+        
+        if (!marketPositions[assetId].whales[address]) {
+          marketPositions[assetId].whales[address] = {
+            address: address,
+            trades: [],
+            totalInvested: 0,
+            avgEntryPrice: 0,
+            side: side
+          };
+        }
+        
+        marketPositions[assetId].whales[address].trades.push({
+          amount: usdAmount,
+          price: entryPrice,
+          timestamp: timestamp,
+          side: side
+        });
+        
+        marketPositions[assetId].whales[address].totalInvested += usdAmount;
+      });
+
+      // Находим рынки где 2+ кита
+      const activePositions = [];
+      
+      for (const [assetId, data] of Object.entries(marketPositions)) {
+        const whalesList = Object.values(data.whales);
+        
+        if (whalesList.length < 2) continue; // Нужно минимум 2 кита
+        
+        // Вычисляем avg entry price и PNL для каждого кита
+        const whalesWithPNL = whalesList.map(whale => {
+          const totalAmount = whale.trades.reduce((sum, t) => sum + t.amount, 0);
+          const avgEntry = whale.trades.reduce((sum, t) => sum + (t.price * t.amount), 0) / totalAmount;
+          
+          // PNL = (currentPrice - avgEntry) * totalInvested / avgEntry
+          let pnl = 0;
+          let pnlPercent = 0;
+          
+          if (whale.side === 'b') {
+            // Long позиция
+            pnl = (data.currentPrice - avgEntry) * totalAmount / avgEntry;
+            pnlPercent = ((data.currentPrice - avgEntry) / avgEntry) * 100;
+          } else {
+            // Short позиция
+            pnl = (avgEntry - data.currentPrice) * totalAmount / avgEntry;
+            pnlPercent = ((avgEntry - data.currentPrice) / avgEntry) * 100;
+          }
+          
+          return {
+            address: whale.address,
+            side: whale.side === 'b' ? 'LONG' : 'SHORT',
+            avgEntryPrice: avgEntry,
+            totalInvested: totalAmount,
+            pnl: pnl,
+            pnlPercent: pnlPercent,
+            tradesCount: whale.trades.length
+          };
+        });
+        
+        // Сортируем китов по объёму инвестиций
+        whalesWithPNL.sort((a, b) => b.totalInvested - a.totalInvested);
+        
+        activePositions.push({
+          question: data.question,
+          outcome: data.outcome,
+          currentPrice: data.currentPrice,
+          whaleCount: whalesList.length,
+          whales: whalesWithPNL.slice(0, 5), // Топ-5 китов
+          totalVolume: whalesWithPNL.reduce((sum, w) => sum + w.totalInvested, 0)
+        });
+      }
+      
+      // Сортируем по количеству китов и объёму
+      activePositions.sort((a, b) => {
+        if (b.whaleCount !== a.whaleCount) return b.whaleCount - a.whaleCount;
+        return b.totalVolume - a.totalVolume;
+      });
+
+      console.log(`   ✓ Активных позиций: ${activePositions.length}`);
+
+      return {
+        found: activePositions.length > 0,
+        count: activePositions.length,
+        positions: activePositions.slice(0, 5) // Топ-5 рынков
+      };
+
+    } catch (error) {
+      return { found: false, error: error.message };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // ГЛАВНЫЙ МЕТОД
   // ═══════════════════════════════════════════════════════════════════
   async runFullAnalysis() {
@@ -1178,6 +1329,9 @@ class HashDiveAnalyzer {
       await new Promise(r => setTimeout(r, 1000));
       
       results.analyses.topValueBets = await this.getTopValueBets();
+      await new Promise(r => setTimeout(r, 1000));
+      
+      results.analyses.activeWhalePositions = await this.getActiveWhalePositions();
 
       console.log('\n═══════════════════════════════════════════════════════════');
       console.log('✅ АНАЛИЗ ЗАВЕРШЁН');
