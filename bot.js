@@ -732,14 +732,14 @@ bot.onText(/\/whales/, async (msg) => {
       awp.positions.slice(0, 3).forEach((pos, i) => {
         message += `${i + 1}\\. ${escapeMarkdown(pos.question.substring(0, 35))}\\.\\.\\.\n`;
         message += `   🐋 Китов активно: ${pos.whaleCount} \\| Объём: $${formatLargeNumber(pos.totalVolume)}\n`;
-        message += `   💰 Текущая цена: ${(pos.currentPrice * 100).toFixed(1)}%\n\n`;
+        message += `   💰 Текущая цена: $${pos.currentPrice.toFixed(2)} \\(${(pos.currentPrice * 100).toFixed(1)}%\\)\n\n`;
         
         // Показываем топ-3 китов
         pos.whales.slice(0, 3).forEach((whale, wi) => {
           const pnlEmoji = whale.pnlPercent > 0 ? '📈' : '📉';
           const pnlSign = whale.pnlPercent > 0 ? '+' : '';
           message += `   ${wi + 1}\\) \`${whale.address}\`\n`;
-          message += `      💼 ${escapeMarkdown(whale.side)} \\| Вход: ${(whale.avgEntryPrice * 100).toFixed(1)}%\n`;
+          message += `      💼 ${escapeMarkdown(whale.side)} \\| Вход: $${whale.avgEntryPrice.toFixed(2)} \\(${(whale.avgEntryPrice * 100).toFixed(1)}%\\)\n`;
           message += `      💵 Инвестировано: $${formatLargeNumber(whale.totalInvested)}\n`;
           message += `      ${pnlEmoji} PNL: ${pnlSign}${whale.pnlPercent.toFixed(1)}% \\(${pnlSign}$${formatLargeNumber(Math.abs(whale.pnl))}\\)\n`;
         });
@@ -780,7 +780,7 @@ bot.onText(/\/whales_full/, async (msg) => {
     await bot.deleteMessage(chatId, loading.message_id).catch(() => {});
 
     // Часть 1: Основные анализы
-    let msg1 = '🐋 ПОЛНЫЙ ОТЧЁТ: ЧАСТЬ 1/3\n\n';
+    let msg1 = '🐋 ПОЛНЫЙ ОТЧЁТ: ЧАСТЬ 1/4\n\n';
     
     if (results.analyses.whaleMarket?.found) {
       const wm = results.analyses.whaleMarket;
@@ -813,7 +813,7 @@ bot.onText(/\/whales_full/, async (msg) => {
     await new Promise(r => setTimeout(r, 1000));
     
     // Часть 2: Дополнительные анализы
-    let msg2 = '🐋 ПОЛНЫЙ ОТЧЁТ: ЧАСТЬ 2/3\n\n';
+    let msg2 = '🐋 ПОЛНЫЙ ОТЧЁТ: ЧАСТЬ 2/4\n\n';
     
     if (results.analyses.revivedInterest?.found) {
       const ri = results.analyses.revivedInterest;
@@ -850,7 +850,7 @@ bot.onText(/\/whales_full/, async (msg) => {
     await new Promise(r => setTimeout(r, 1000));
     
     // Часть 3: Риски
-    let msg3 = '🐋 ПОЛНЫЙ ОТЧЁТ: ЧАСТЬ 3/3\n\n';
+    let msg3 = '🐋 ПОЛНЫЙ ОТЧЁТ: ЧАСТЬ 3/4\n\n';
     
     if (results.analyses.shortSqueeze?.found) {
       const ss = results.analyses.shortSqueeze;
@@ -882,6 +882,41 @@ bot.onText(/\/whales_full/, async (msg) => {
     }
     
     await bot.sendMessage(chatId, msg3);
+    await new Promise(r => setTimeout(r, 1000));
+    
+    // Часть 4: Топ-3 ставок и Активные позиции
+    let msg4 = '🐋 ПОЛНЫЙ ОТЧЁТ: ЧАСТЬ 4/4\n\n';
+    
+    if (results.analyses.topValueBets?.found) {
+      const tvb = results.analyses.topValueBets;
+      msg4 += `💎 ТОП-3 ВЫГОДНЫХ СТАВОК:\n`;
+      tvb.bets.forEach((bet, i) => {
+        msg4 += `${i + 1}. ${bet.direction}\n`;
+        msg4 += `   ${bet.question.substring(0, 40)}...\n`;
+        msg4 += `   📊 $${formatLargeNumber(bet.totalVolume)} (${bet.buyRatio})\n`;
+        msg4 += `   📈 Вход: ${bet.avgPrice}\n`;
+        msg4 += `   ⚡ ${bet.signal}\n`;
+      });
+      msg4 += '\n';
+    }
+    
+    if (results.analyses.activeWhalePositions?.found) {
+      const awp = results.analyses.activeWhalePositions;
+      msg4 += `🎯 АКТИВНЫЕ ПОЗИЦИИ (${awp.count}):\n`;
+      awp.positions.slice(0, 3).forEach((pos, i) => {
+        msg4 += `${i + 1}. ${pos.question.substring(0, 35)}...\n`;
+        msg4 += `   🐋 Китов: ${pos.whaleCount} | $${formatLargeNumber(pos.totalVolume)}\n`;
+        msg4 += `   💰 Цена: $${pos.currentPrice.toFixed(2)} (${(pos.currentPrice * 100).toFixed(1)}%)\n`;
+        
+        pos.whales.slice(0, 2).forEach((whale, wi) => {
+          const pnlSign = whale.pnlPercent > 0 ? '+' : '';
+          msg4 += `     ${wi + 1}) ${whale.side} | Вход: $${whale.avgEntryPrice.toFixed(2)}\n`;
+          msg4 += `        PNL: ${pnlSign}${whale.pnlPercent.toFixed(1)}%\n`;
+        });
+      });
+    }
+    
+    await bot.sendMessage(chatId, msg4);
 
   } catch (error) {
     console.error('Error in /whales_full:', error);
