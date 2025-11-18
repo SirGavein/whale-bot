@@ -284,7 +284,7 @@ bot.onText(/\/help/, (msg) => {
 ├ Кит на мелководье
 └ Общий объём 24h
 
-🐋 */whales_full*
+🐋 
 Полный отчёт по всем 9 анализам:
 ├ Возрождённый интерес
 ├ Тренд против новостей
@@ -555,217 +555,233 @@ bot.onText(/\/whales/, async (msg) => {
 
   try {
     const results = await hashDive.runFullAnalysis();
-
     await bot.deleteMessage(chatId, loading.message_id).catch(() => {});
 
-    // Формируем отчёт
-    let message = '🐋 *АНАЛИЗ АКТИВНОСТИ КИТОВ*\n';
-    message += `_${new Date().toLocaleString('ru-RU')}_\n\n`;
+    // Helper функция для безопасной отправки
+    async function sendSafe(text) {
+      try {
+        await bot.sendMessage(chatId, text, { parse_mode: 'MarkdownV2' });
+      } catch (parseError) {
+        console.warn('Markdown parse failed, sending plain text');
+        await bot.sendMessage(chatId, text.replace(/[*_`\\[\]()~>#+\-=|{}.!]/g, ''));
+      }
+    }
 
-    // 1. Рынок-фаворит китов
+    // ═══════════════════════════════════════════════════════════════
+    // ЧАСТЬ 1: ЗАГОЛОВОК + ОСНОВНЫЕ ФУНКЦИИ (1-5)
+    // ═══════════════════════════════════════════════════════════════
+    let msg1 = '🐋 *АНАЛИЗ АКТИВНОСТИ КИТОВ \\[1/3\\]*\n';
+    msg1 += `_${new Date().toLocaleString('ru-RU')}_\n\n`;
+
+    // 1. Рынок-фаворит
     if (results.analyses.whaleMarket?.found) {
       const wm = results.analyses.whaleMarket;
-      message += `*🎯 РЫНОК\\-ФАВОРИТ:*\n`;
-      message += `${escapeMarkdown(wm.question)}\n`;
-      message += `💰 Приток: $${formatLargeNumber(wm.totalInflow)}\n`;
-      message += `🐋 Китов: ${wm.whaleCount}\n`;
-      message += `📊 Ср\\. сделка: $${formatLargeNumber(wm.avgTradeSize)}\n`;
-      message += `🎯 Направление: ${escapeMarkdown(wm.direction)} \\(${wm.directionPercent}\\)\n`;
-      message += `📈 Ср\\. точка входа: ${escapeMarkdown(wm.avgPrice)}\n`;
-      message += `⏰ Активность: ${escapeMarkdown(wm.timeRange)}\n`;
-      message += `✓ Уверенность: ${wm.confidence}\n\n`;
+      msg1 += `*🎯 РЫНОК\\-ФАВОРИТ:*\n`;
+      msg1 += `${escapeMarkdown(wm.question)}\n`;
+      msg1 += `💰 Приток: $${formatLargeNumber(wm.totalInflow)}\n`;
+      msg1 += `🐋 Китов: ${wm.whaleCount}\n`;
+      msg1 += `📊 Ср\\. сделка: $${formatLargeNumber(wm.avgTradeSize)}\n`;
+      msg1 += `🎯 Направление: ${escapeMarkdown(wm.direction)} \\(${wm.directionPercent}\\)\n`;
+      msg1 += `📈 Ср\\. точка входа: ${escapeMarkdown(wm.avgPrice)}\n`;
+      msg1 += `⏰ Активность: ${escapeMarkdown(wm.timeRange)}\n`;
+      msg1 += `✓ Уверенность: ${wm.confidence}\n\n`;
+    } else {
+      msg1 += `*🎯 РЫНОК\\-ФАВОРИТ:* нет данных\n\n`;
     }
 
     // 2. Смены позиций
     if (results.analyses.positionFlips?.found) {
       const pf = results.analyses.positionFlips;
-      message += `*🔄 СМЕНЫ ПОЗИЦИЙ \\(${pf.count}\\):*\n`;
+      msg1 += `*🔄 СМЕНЫ ПОЗИЦИЙ \\(${pf.count}\\):*\n`;
       pf.flips.slice(0, 3).forEach((flip, i) => {
-        message += `${i + 1}\\. ${escapeMarkdown(flip.oldPosition)} → ${escapeMarkdown(flip.newPosition)}\n`;
-        message += `   ${escapeMarkdown(flip.question.substring(0, 40))}\\.\\.\\.\n`;
-        message += `   💵 $${formatLargeNumber(flip.changeAmount)}\n`;
+        msg1 += `${i + 1}\\. ${escapeMarkdown(flip.oldPosition)} → ${escapeMarkdown(flip.newPosition)}\n`;
+        msg1 += `   ${escapeMarkdown(flip.question.substring(0, 40))}\\.\\.\\.\
+`;
+        msg1 += `   💵 $${formatLargeNumber(flip.changeAmount)}\n`;
       });
-      message += '\n';
+      msg1 += '\n';
+    } else {
+      msg1 += `*🔄 СМЕНЫ ПОЗИЦИЙ:* нет данных\n\n`;
     }
 
     // 3. Накопление
     if (results.analyses.accumulation?.found) {
       const acc = results.analyses.accumulation;
-      message += `*📊 НАКОПЛЕНИЕ \\(${acc.count}\\):*\n`;
-      acc.accumulations.slice(0, 5).forEach((a, i) => {
-        message += `${i + 1}\\. ${a.pattern} ${escapeMarkdown(a.direction)}\n`;
-        message += `   ${escapeMarkdown(a.question.substring(0, 40))}\\.\\.\\.\n`;
-        message += `   💰 $${formatLargeNumber(a.totalVolume)} \\(${a.tradeCount} сделок\\)\n`;
+      msg1 += `*📊 НАКОПЛЕНИЕ \\(${acc.count}\\):*\n`;
+      acc.accumulations.slice(0, 3).forEach((a, i) => {
+        msg1 += `${i + 1}\\. ${a.pattern} ${escapeMarkdown(a.direction)}\n`;
+        msg1 += `   ${escapeMarkdown(a.question.substring(0, 40))}\\.\\.\\.\
+`;
+        msg1 += `   💰 $${formatLargeNumber(a.totalVolume)} \\(${a.tradeCount} сделок\\)\n`;
       });
-      message += '\n';
+      msg1 += '\n';
+    } else {
+      msg1 += `*📊 НАКОПЛЕНИЕ:* нет данных\n\n`;
     }
 
     // 4. Кит на мелководье
     if (results.analyses.whaleOnShallow?.found) {
       const ws = results.analyses.whaleOnShallow;
-      message += `*⚠️ КИТ НА МЕЛКОВОДЬЕ \\(${ws.count}\\):*\n`;
+      msg1 += `*⚠️ КИТ НА МЕЛКОВОДЬЕ \\(${ws.count}\\):*\n`;
       ws.risks.slice(0, 3).forEach((r, i) => {
-        message += `${i + 1}\\. ${escapeMarkdown(r.question.substring(0, 40))}\\.\\.\\.\n`;
-        message += `   🐋 $${formatLargeNumber(r.maxWhale)} vs $${formatLargeNumber(r.totalVolume)}\n`;
-        message += `   👤 Кошелёк: \`${r.whaleAddress}\`\n`;
-        message += `   ⚠️ Риск: ${escapeMarkdown(r.riskFactor)} \\(${r.tradeCount} сделок\\)\n`;
+        msg1 += `${i + 1}\\. ${escapeMarkdown(r.question.substring(0, 40))}\\.\\.\\.\
+`;
+        msg1 += `   🐋 $${formatLargeNumber(r.maxWhale)} vs $${formatLargeNumber(r.totalVolume)}\n`;
+        msg1 += `   👤 Кошелёк: \`${r.whaleAddress}\`\n`;
+        msg1 += `   ⚠️ Риск: ${escapeMarkdown(r.riskFactor)} \\(${r.tradeCount} сделок\\)\n`;
       });
-      message += '\n';
+      msg1 += '\n';
+    } else {
+      msg1 += `*⚠️ КИТ НА МЕЛКОВОДЬЕ:* нет данных\n\n`;
     }
 
     // 5. Общий объём
     if (results.analyses.totalVolume?.found) {
       const tv = results.analyses.totalVolume;
-      message += `*📊 ОБЩИЙ ОБЪЁМ:*\n`;
-      message += `Сегодня: $${formatLargeNumber(tv.totalToday)}\n`;
+      msg1 += `*📊 ОБЩИЙ ОБЪЁМ:*\n`;
+      msg1 += `Сегодня: $${formatLargeNumber(tv.totalToday)}\n`;
       if (tv.totalYesterday !== null) {
-        message += `Вчера: $${formatLargeNumber(tv.totalYesterday)}\n`;
-        message += `Изменение: ${escapeMarkdown(tv.changeFormatted)}\n`;
+        msg1 += `Вчера: $${formatLargeNumber(tv.totalYesterday)}\n`;
+        msg1 += `Изменение: ${escapeMarkdown(tv.changeFormatted)}\n`;
       }
-      message += `Сделок: ${tv.tradeCount}\n`;
-      message += `Покупок: ${tv.buys} | Продаж: ${tv.sells}\n`;
-      message += `Настроение: ${tv.sentiment}\n\n`;
+      msg1 += `Сделок: ${tv.tradeCount}\n`;
+      msg1 += `Покупок: ${tv.buys} \| Продаж: ${tv.sells}\n`;
+      msg1 += `Настроение: ${tv.sentiment}\n`;
+    } else {
+      msg1 += `*📊 ОБЩИЙ ОБЪЁМ:* нет данных\n`;
     }
 
-    // Если есть дополнительные анализы
-    let hasMore = false;
-    
+    await sendSafe(msg1);
+
+    // ═══════════════════════════════════════════════════════════════
+    // ЧАСТЬ 2: ФУНКЦИИ 6-9
+    // ═══════════════════════════════════════════════════════════════
+    let msg2 = '🐋 *АНАЛИЗ АКТИВНОСТИ КИТОВ \\[2/3\\]*\n\n';
+
     // 6. Возрождённый интерес
     if (results.analyses.revivedInterest?.found) {
       const ri = results.analyses.revivedInterest;
-      message += `*🔄 ВОЗРОЖДЁННЫЙ ИНТЕРЕС \\(${ri.count}\\):*\n`;
+      msg2 += `*🔄 ВОЗРОЖДЁННЫЙ ИНТЕРЕС \\(${ri.count}\\):*\n`;
       ri.spikes.slice(0, 3).forEach((s, i) => {
-        message += `${i + 1}\\. ${escapeMarkdown(s.question.substring(0, 40))}\\.\\.\\.\n`;
-        message += `   📈 Рост: ${escapeMarkdown(s.spikeRatio)}\n`;
-        message += `   💰 Сегодня: $${formatLargeNumber(s.todayVolume)}\n`;
+        msg2 += `${i + 1}\\. ${escapeMarkdown(s.question.substring(0, 40))}\\.\\.\\.\
+`;
+        msg2 += `   📈 Рост: ${escapeMarkdown(s.spikeRatio)}\n`;
+        msg2 += `   💰 Сегодня: $${formatLargeNumber(s.todayVolume)}\n`;
       });
-      message += '\n';
-      hasMore = true;
+      msg2 += '\n';
+    } else {
+      msg2 += `*🔄 ВОЗРОЖДЁННЫЙ ИНТЕРЕС:* нет данных\n\n`;
     }
-    
+
     // 7. Необычная активность
     if (results.analyses.counterTrend?.found) {
       const ct = results.analyses.counterTrend;
-      message += `*📰 НЕОБЫЧНАЯ АКТИВНОСТЬ \\(${ct.count}\\):*\n`;
-      ct.trends.slice(0, 3).forEach((t, i) => {
-        message += `${i + 1}\\. ${escapeMarkdown(t.direction)}\n`;
-        message += `   ${escapeMarkdown(t.question.substring(0, 40))}\\.\\.\\.\n`;
-        message += `   📊 Соотношение: ${escapeMarkdown(t.buyRatio)}\n`;
-        message += `   📈 Ср\\. точка входа: ${escapeMarkdown(t.avgEntryPoint || 'N/A')}\n`;
-        message += `   ⏰ ${escapeMarkdown(t.timeRange)}\n`;
-        
-        // Показываем кошельки
-        if (t.buyerAddresses && t.buyerAddresses.length > 0) {
-          const buyers = t.buyerAddresses.slice(0, 2).join(', ');
-          message += `   🟢 Покупают: \`${buyers}\`\n`;
-        }
-        if (t.sellerAddresses && t.sellerAddresses.length > 0) {
-          const sellers = t.sellerAddresses.slice(0, 2).join(', ');
-          message += `   🔴 Продают: \`${sellers}\`\n`;
-        }
+      msg2 += `*📰 НЕОБЫЧНАЯ АКТИВНОСТЬ \\(${ct.count}\\):*\n`;
+      ct.trends.slice(0, 2).forEach((t, i) => {
+        msg2 += `${i + 1}\\. ${escapeMarkdown(t.direction)}\n`;
+        msg2 += `   ${escapeMarkdown(t.question.substring(0, 40))}\\.\\.\\.\
+`;
+        msg2 += `   📊 Соотношение: ${escapeMarkdown(t.buyRatio)}\n`;
+        msg2 += `   📈 Ср\\. точка входа: ${escapeMarkdown(t.avgEntryPoint || 'N/A')}\n`;
+        msg2 += `   ⏰ ${escapeMarkdown(t.timeRange)}\n`;
       });
-      message += '\n';
-      hasMore = true;
+      msg2 += '\n';
+    } else {
+      msg2 += `*📰 НЕОБЫЧНАЯ АКТИВНОСТЬ:* нет данных\n\n`;
     }
-    
+
     // 8. Противостояние китов
     if (results.analyses.whaleConflict?.found) {
       const wc = results.analyses.whaleConflict;
-      message += `*⚔️ ПРОТИВОСТОЯНИЕ \\(${wc.count}\\):*\n`;
-      wc.conflicts.slice(0, 3).forEach((c, i) => {
-        message += `${i + 1}\\. ${escapeMarkdown(c.direction)}\n`;
-        message += `   ${escapeMarkdown(c.question.substring(0, 40))}\\.\\.\\.\n`;
-        message += `   👥 Покупателей: ${c.buyersCount} | Продавцов: ${c.sellersCount}\n`;
-        message += `   📈 Ср\\. точка входа: ${escapeMarkdown(c.avgPrice)}\n`;
-        message += `   ⏰ ${escapeMarkdown(c.timeRange)}\n`;
-        
-        // Показываем адреса покупателей
-        if (c.buyerAddresses && c.buyerAddresses.length > 0) {
-          const buyers = c.buyerAddresses.slice(0, 2).join(', ');
-          message += `   🟢 Покупают: \`${buyers}\`\n`;
-        }
-        
-        // Показываем адреса продавцов
-        if (c.sellerAddresses && c.sellerAddresses.length > 0) {
-          const sellers = c.sellerAddresses.slice(0, 2).join(', ');
-          message += `   🔴 Продают: \`${sellers}\`\n`;
-        }
+      msg2 += `*⚔️ ПРОТИВОСТОЯНИЕ \\(${wc.count}\\):*\n`;
+      wc.conflicts.slice(0, 2).forEach((c, i) => {
+        msg2 += `${i + 1}\\. ${escapeMarkdown(c.direction)}\n`;
+        msg2 += `   ${escapeMarkdown(c.question.substring(0, 40))}\\.\\.\\.\
+`;
+        msg2 += `   👥 Покупателей: ${c.buyersCount} \| Продавцов: ${c.sellersCount}\n`;
+        msg2 += `   📈 Ср\\. точка входа: ${escapeMarkdown(c.avgPrice)}\n`;
       });
-      message += '\n';
-      hasMore = true;
+      msg2 += '\n';
+    } else {
+      msg2 += `*⚔️ ПРОТИВОСТОЯНИЕ:* нет данных\n\n`;
     }
-    
+
     // 9. Короткий сквиз
     if (results.analyses.shortSqueeze?.found) {
       const ss = results.analyses.shortSqueeze;
-      message += `*💥 КОРОТКИЙ СКВИЗ \\(${ss.count}\\):*\n`;
+      msg2 += `*💥 КОРОТКИЙ СКВИЗ \\(${ss.count}\\):*\n`;
       ss.squeezes.slice(0, 3).forEach((sq, i) => {
-        message += `${i + 1}\\. ${escapeMarkdown(sq.direction)}\n`;
-        message += `   ${escapeMarkdown(sq.question.substring(0, 40))}\\.\\.\\.\n`;
-        message += `   ⚠️ Риск: ${escapeMarkdown(sq.squeezeRisk)} \\(шорты ${escapeMarkdown(sq.sellRatio)}\\)\n`;
+        msg2 += `${i + 1}\\. ${escapeMarkdown(sq.direction)}\n`;
+        msg2 += `   ${escapeMarkdown(sq.question.substring(0, 40))}\\.\\.\\.\
+`;
+        msg2 += `   ⚠️ Риск: ${escapeMarkdown(sq.squeezeRisk)} \\(шорты ${escapeMarkdown(sq.sellRatio)}\\)\n`;
       });
-      message += '\n';
-      hasMore = true;
+      msg2 += '\n';
+    } else {
+      msg2 += `*💥 КОРОТКИЙ СКВИЗ:* нет данных\n`;
     }
+
+    await sendSafe(msg2);
+
+    // ═══════════════════════════════════════════════════════════════
+    // ЧАСТЬ 3: ФУНКЦИИ 10-11
+    // ═══════════════════════════════════════════════════════════════
+    let msg3 = '🐋 *АНАЛИЗ АКТИВНОСТИ КИТОВ \\[3/3\\]*\n\n';
 
     // 10. Топ-3 выгодных ставок
     if (results.analyses.topValueBets?.found) {
       const tvb = results.analyses.topValueBets;
-      message += `*💎 ТОП\\-3 ВЫГОДНЫХ СТАВОК:*\n`;
+      msg3 += `*💎 ТОП\\-3 ВЫГОДНЫХ СТАВОК:*\n`;
       tvb.bets.forEach((bet, i) => {
-        message += `${i + 1}\\. ${escapeMarkdown(bet.direction)}\n`;
-        message += `   ${escapeMarkdown(bet.question.substring(0, 40))}\\.\\.\\.\n`;
-        message += `   📊 Объём: $${formatLargeNumber(bet.totalVolume)} \\(${escapeMarkdown(bet.buyRatio)} китов\\)\n`;
-        message += `   📈 Ср\\. точка входа: ${escapeMarkdown(bet.avgPrice)}\n`;
-        message += `   ⏰ ${escapeMarkdown(bet.timeRange)}\n`;
-        message += `   ⚡ Сигнал: ${bet.signal}\n`;
+        msg3 += `${i + 1}\\. ${escapeMarkdown(bet.direction)}\n`;
+        msg3 += `   ${escapeMarkdown(bet.question.substring(0, 40))}\\.\\.\\.\
+`;
+        msg3 += `   📊 Объём: $${formatLargeNumber(bet.totalVolume)} \\(${escapeMarkdown(bet.buyRatio)} китов\\)\n`;
+        msg3 += `   📈 Ср\\. точка входа: ${escapeMarkdown(bet.avgPrice)}\n`;
+        msg3 += `   ⚡ Сигнал: ${bet.signal}\n`;
       });
-      message += '\n📋 *Рекомендация:* Диверсификация 40% спорт, 30% крипто, 30% другое\\.\n';
-      message += '⚠️ Мониторь травмы и новости\\!\n\n';
-      hasMore = true;
+      msg3 += '\n📋 *Рекомендация:* Диверсификация 40% спорт, 30% крипто, 30% другое\\.\n';
+      msg3 += '⚠️ Мониторь травмы и новости\\!\n\n';
+    } else {
+      msg3 += `*💎 ТОП\\-3 ВЫГОДНЫХ СТАВОК:* нет данных\n\n`;
     }
 
     // 11. Активные позиции китов
     if (results.analyses.activeWhalePositions?.found) {
       const awp = results.analyses.activeWhalePositions;
-      message += `*🎯 АКТИВНЫЕ ПОЗИЦИИ КИТОВ \\(${awp.count}\\):*\n`;
+      msg3 += `*🎯 АКТИВНЫЕ ПОЗИЦИИ \\(${awp.count}\\):*\n`;
       awp.positions.slice(0, 3).forEach((pos, i) => {
-        message += `${i + 1}\\. ${escapeMarkdown(pos.question.substring(0, 35))}\\.\\.\\.\n`;
-        message += `   🐋 Китов активно: ${pos.whaleCount} \\| Объём: $${formatLargeNumber(pos.totalVolume)}\n`;
-        message += `   💰 Текущая цена: $${pos.currentPrice.toFixed(2)} \\(${(pos.currentPrice * 100).toFixed(1)}%\\)\n\n`;
+        msg3 += `${i + 1}\\. ${escapeMarkdown(pos.question.substring(0, 35))}\\.\\.\\.\
+`;
+        msg3 += `   🐋 Китов: ${pos.whaleCount} \| Объём: $${formatLargeNumber(pos.totalVolume)}\n`;
+        msg3 += `   💰 Цена: $${pos.currentPrice.toFixed(2)} \\(${(pos.currentPrice * 100).toFixed(1)}%\\)\n`;
         
-        // Показываем топ-3 китов
-        pos.whales.slice(0, 3).forEach((whale, wi) => {
+        // Показываем топ-2 китов
+        pos.whales.slice(0, 2).forEach((whale, wi) => {
           const pnlEmoji = whale.pnlPercent > 0 ? '📈' : '📉';
           const pnlSign = whale.pnlPercent > 0 ? '+' : '';
-          message += `   ${wi + 1}\\) \`${whale.address}\`\n`;
-          message += `      💼 ${escapeMarkdown(whale.side)} \\| Вход: $${whale.avgEntryPrice.toFixed(2)} \\(${(whale.avgEntryPrice * 100).toFixed(1)}%\\)\n`;
-          message += `      💵 Инвестировано: $${formatLargeNumber(whale.totalInvested)}\n`;
-          message += `      ${pnlEmoji} PNL: ${pnlSign}${whale.pnlPercent.toFixed(1)}% \\(${pnlSign}$${formatLargeNumber(Math.abs(whale.pnl))}\\)\n`;
+          msg3 += `   ${wi + 1}\\) \`${whale.address}\`\n`;
+          msg3 += `      💼 ${escapeMarkdown(whale.side)} \| Вход: $${whale.avgEntryPrice.toFixed(2)} \\(${(whale.avgEntryPrice * 100).toFixed(1)}%\\)\n`;
+          msg3 += `      ${pnlEmoji} PNL: ${pnlSign}${whale.pnlPercent.toFixed(1)}% \\(${pnlSign}$${formatLargeNumber(Math.abs(whale.pnl))}\\)\n`;
         });
-        message += '\n';
+        msg3 += '\n';
       });
-      hasMore = true;
+    } else {
+      msg3 += `*🎯 АКТИВНЫЕ ПОЗИЦИИ:* нет данных\n`;
     }
 
-    if (hasMore) {
-      message += `_Используйте /whales\\_full для полного отчёта_`;
-    }
+    msg3 += '\n✅ *Анализ завершён\\!*';
 
-    // Отправляем с обработкой ошибок
-    try {
-      await bot.sendMessage(chatId, message, { parse_mode: 'MarkdownV2' });
-    } catch (parseError) {
-      // Если MarkdownV2 не работает, пробуем без форматирования
-      console.warn('Markdown parse failed, sending plain text');
-      await bot.sendMessage(chatId, message.replace(/[*_`\\[\]()~>#+\-=|{}.!]/g, ''));
-    }
+    await sendSafe(msg3);
 
   } catch (error) {
     console.error('Error in /whales:', error);
     await bot.deleteMessage(chatId, loading.message_id).catch(() => {});
     await bot.sendMessage(chatId, '❌ Ошибка при анализе китов\n\n' + error.message);
   }
+});
+
+
 });
 
 // ==================== /whales_full - ПОЛНЫЙ АНАЛИЗ ====================
@@ -942,7 +958,7 @@ console.log('Доступные команды:');
 console.log('  /start - Начало работы');
 console.log('  /analyze - Полный AI-анализ');
 console.log('  /whales - Анализ китов 🐋');
-console.log('  /whales_full - Полный отчёт китов');
+console.log('  ');
 console.log('  /markets - Топ событий');
 console.log('  /news - Свежие новости');
 console.log('  /politics - Политика');

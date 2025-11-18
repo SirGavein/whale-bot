@@ -106,11 +106,21 @@ class HashDiveAnalyzer {
     
     // Проверяем цену (если есть)
     if (market_info.target_price !== undefined) {
-      const price = parseFloat(market_info.target_price);
+      const price = this.normalizePrice(market_info.target_price);
       if (price <= 0.01 || price >= 0.99) return false; // Истёк
     }
     
     return true;
+  }
+
+
+  // Нормализация цены в диапазон 0-1
+  // API может возвращать цену как 0.685 или как 68.5
+  normalizePrice(price) {
+    const p = parseFloat(price || 0.5);
+    // Если цена > 1, значит она в процентах - делим на 100
+    if (p > 1) return p / 100;
+    return p;
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -141,7 +151,7 @@ class HashDiveAnalyzer {
         const usdAmount = parseFloat(trade.usd_amount || 0);
         const side = trade.side;
         const timestamp = new Date(trade.timestamp || 0).getTime();
-        const price = parseFloat(trade.market_info?.target_price || 0.5);
+        const price = this.normalizePrice(trade.market_info?.target_price);
         
         if (!marketData[assetId]) {
           marketData[assetId] = {
@@ -747,7 +757,7 @@ class HashDiveAnalyzer {
         
         const assetId = trade.asset_id;
         const usdAmount = parseFloat(trade.usd_amount || 0);
-        const price = parseFloat(trade.market_info?.target_price || 0.5);
+        const price = this.normalizePrice(trade.market_info?.target_price);
         
         if (!marketSentiment[assetId]) {
           marketSentiment[assetId] = {
@@ -875,7 +885,7 @@ class HashDiveAnalyzer {
         
         const assetId = trade.asset_id;
         const usdAmount = parseFloat(trade.usd_amount || 0);
-        const price = parseFloat(trade.market_info?.target_price || 0.5);
+        const price = this.normalizePrice(trade.market_info?.target_price);
         
         if (!marketConflicts[assetId]) {
           marketConflicts[assetId] = {
@@ -1092,7 +1102,7 @@ class HashDiveAnalyzer {
         
         const assetId = trade.asset_id;
         const usdAmount = parseFloat(trade.usd_amount || 0);
-        const price = parseFloat(trade.market_info?.target_price || 0.5);
+        const price = this.normalizePrice(trade.market_info?.target_price);
         
         if (!marketData[assetId]) {
           marketData[assetId] = {
@@ -1236,7 +1246,7 @@ class HashDiveAnalyzer {
         const assetId = trade.asset_id;
         const address = trade.user_address;
         const usdAmount = parseFloat(trade.usd_amount || 0);
-        const entryPrice = parseFloat(trade.market_info?.target_price || 0.5);
+        const entryPrice = this.normalizePrice(trade.market_info?.target_price);
         const side = trade.side; // 'b' = buy, 's' = sell
         
         if (!marketPositions[assetId]) {
