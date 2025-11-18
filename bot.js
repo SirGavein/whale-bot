@@ -666,6 +666,21 @@ bot.onText(/\/whales/, async (msg) => {
       hasMore = true;
     }
 
+    // 10. Топ-3 выгодных ставок
+    if (results.analyses.topValueBets?.found) {
+      const tvb = results.analyses.topValueBets;
+      message += `*💎 ТОП\\-3 ВЫГОДНЫХ СТАВОК:*\n`;
+      tvb.bets.forEach((bet, i) => {
+        message += `${i + 1}\\. ${escapeMarkdown(bet.direction)}\n`;
+        message += `   ${escapeMarkdown(bet.question.substring(0, 40))}\\.\\.\\.\n`;
+        message += `   📊 Объём: $${formatLargeNumber(bet.totalVolume)} \\(${escapeMarkdown(bet.buyRatio)} китов\\)\n`;
+        message += `   ⚡ Сигнал: ${bet.signal}\n`;
+      });
+      message += '\n📋 *Рекомендация:* Диверсификация 40% спорт, 30% крипто, 30% другое\\.\n';
+      message += '⚠️ Мониторь травмы и новости\\!\n\n';
+      hasMore = true;
+    }
+
     if (hasMore) {
       message += `_Используйте /whales\\_full для полного отчёта_`;
     }
@@ -831,15 +846,3 @@ console.log('  /news - Свежие новости');
 console.log('  /politics - Политика');
 console.log('  /crypto - Криптовалюты');
 console.log('  /tech - Технологии\n');
-// HTTP сервер для Render.com
-const http = require('http');
-const PORT = process.env.PORT || 3000;
-
-const server = http.createServer((req, res) => {
-  res.writeHead(200, {'Content-Type': 'text/plain'});
-  res.end('🐋 Whale Bot is running!\n');
-});
-
-server.listen(PORT, () => {
-  console.log(`✅ HTTP server running on port ${PORT}`);
-});

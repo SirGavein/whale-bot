@@ -457,7 +457,7 @@ class HashDiveAnalyzer {
             question: data.question,
             outcome: data.outcome,
             maxWhale: data.maxWhale,
-            whaleAddress: data.maxWhaleAddress,
+            whaleAddress: data.maxWhaleAddress.substring(0, 16) + '...',
             totalVolume: data.totalVolume,
             riskFactor: Math.round(riskFactor * 100) + '%',
             tradeCount: data.tradeCount
@@ -796,9 +796,9 @@ class HashDiveAnalyzer {
           const buyVolume = data.buyers.reduce((sum, b) => sum + b.amount, 0);
           const sellVolume = data.sellers.reduce((sum, s) => sum + s.amount, 0);
 
-          // Собираем адреса китов
-          const buyerAddresses = data.buyers.map(b => b.address.substring(0, 10) + '...');
-          const sellerAddresses = data.sellers.map(s => s.address.substring(0, 10) + '...');
+          // Собираем адреса китов (16 символов)
+          const buyerAddresses = data.buyers.map(b => b.address.substring(0, 16) + '...');
+          const sellerAddresses = data.sellers.map(s => s.address.substring(0, 16) + '...');
 
           conflicts.push({
             question: data.question,
@@ -922,6 +922,123 @@ class HashDiveAnalyzer {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // ФУНКЦИЯ 10: ТОП-3 ВЫГОДНЫХ СТАВОК
+  // Формула: value = (whale_buy_ratio - 0.5) * whale_volume
+  // Чем больше китов покупают + чем больше объём = тем выгоднее
+  // ═══════════════════════════════════════════════════════════════════
+  async getTopValueBets() {
+    console.log('💎 [10/10] Топ-3 выгодных ставок...');
+    
+    try {
+      const trades = await this.request('/get_latest_whale_trades', {
+        min_usd: 5000,
+        limit: 500
+      });
+
+      if (!trades || trades.length === 0) {
+        return { found: false };
+      }
+
+      const now = Date.now();
+      const marketData = {};
+      
+      trades.forEach(trade => {
+        if (!this.isMarketLiquid(trade.market_info)) return;
+        
+        const timestamp = new Date(trade.timestamp || 0).getTime();
+        const hoursSince = (now - timestamp) / (1000 * 60 * 60);
+        
+        // Только свежие <3ч
+        if (hoursSince > 3) return;
+        
+        const assetId = trade.asset_id;
+        const usdAmount = parseFloat(trade.usd_amount || 0);
+        
+        if (!marketData[assetId]) {
+          marketData[assetId] = {
+            question: trade.market_info?.question || 'Unknown',
+            outcome: trade.market_info?.outcome || 'Unknown',
+            buys: 0,
+            sells: 0,
+            buyVolume: 0,
+            sellVolume: 0
+          };
+        }
+
+        if (trade.side === 'b') {
+          marketData[assetId].buys++;
+          marketData[assetId].buyVolume += usdAmount;
+        } else {
+          marketData[assetId].sells++;
+          marketData[assetId].sellVolume += usdAmount;
+        }
+      });
+
+      const valueBets = [];
+      
+      for (const [assetId, data] of Object.entries(marketData)) {
+        const total = data.buys + data.sells;
+        if (total < 5) continue; // Минимум 5 сделок
+
+        const totalVolume = data.buyVolume + data.sellVolume;
+        const buyRatio = data.buys / total;
+        
+        // Value = насколько сильно киты склоняются в одну сторону * объём
+        let value = 0;
+        let direction = '';
+        let signal = '';
+        
+        if (buyRatio > 0.6) {
+          // Покупают YES
+          value = (buyRatio - 0.5) * totalVolume;
+          const valuePercent = Math.round((buyRatio - 0.5) * 200);
+          direction = `YES на ${data.outcome} (+${valuePercent}% value)`;
+          
+          if (buyRatio > 0.8) signal = '🔥 СИЛЬНЫЙ';
+          else if (buyRatio > 0.7) signal = '⚡ СРЕДНИЙ';
+          else signal = '💫 СЛАБЫЙ';
+          
+        } else if (buyRatio < 0.4) {
+          // Покупают NO
+          value = (0.5 - buyRatio) * totalVolume;
+          const valuePercent = Math.round((0.5 - buyRatio) * 200);
+          direction = `NO против ${data.outcome} (+${valuePercent}% value)`;
+          
+          if (buyRatio < 0.2) signal = '🔥 СИЛЬНЫЙ';
+          else if (buyRatio < 0.3) signal = '⚡ СРЕДНИЙ';
+          else signal = '💫 СЛАБЫЙ';
+        }
+        
+        if (value > 0) {
+          valueBets.push({
+            question: data.question,
+            outcome: data.outcome,
+            direction,
+            value,
+            totalVolume,
+            buyRatio: Math.round(buyRatio * 100) + '%',
+            signal
+          });
+        }
+      }
+
+      // Сортируем по value
+      valueBets.sort((a, b) => b.value - a.value);
+
+      console.log(`   ✓ Выгодных ставок: ${valueBets.length}`);
+
+      return {
+        found: valueBets.length > 0,
+        count: valueBets.length,
+        bets: valueBets.slice(0, 3)
+      };
+
+    } catch (error) {
+      return { found: false, error: error.message };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // ГЛАВНЫЙ МЕТОД
   // ═══════════════════════════════════════════════════════════════════
   async runFullAnalysis() {
@@ -960,6 +1077,9 @@ class HashDiveAnalyzer {
       await new Promise(r => setTimeout(r, 1000));
       
       results.analyses.shortSqueeze = await this.getShortSqueeze();
+      await new Promise(r => setTimeout(r, 1000));
+      
+      results.analyses.topValueBets = await this.getTopValueBets();
 
       console.log('\n═══════════════════════════════════════════════════════════');
       console.log('✅ АНАЛИЗ ЗАВЕРШЁН');
